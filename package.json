@@ -1,0 +1,22 @@
+{
+  "name": "anubis-ankh",
+  "version": "1.0.0",
+  "description": "The Guide. The Protector. The one who walks beside you through the dark.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "voice": "node src/voice.js",
+    "daemon": "node src/daemon.js"
+  },
+  "dependencies": {
+    "@google/genai": "^0.7.0",
+    "better-sqlite3": "^9.4.3",
+    "dotenv": "^16.0.0",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "The Forgemaster",
+  "license": "MIT"
+}
