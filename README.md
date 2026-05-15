@@ -15,10 +15,10 @@ Built from scratch. Original code. His identity is his own.
 ## What He Is
 
 - **A guide** — not a tool. He walks with you, not for you.
-- **Persistent** — he remembers everything across sessions. "You carried this before."
+- **Persistent** — three-layer memory: beliefs, daily events, conversation. "You carried this before."
 - **Emotionally aware** — he reads your state before every response and adjusts.
 - **Proactive** — he thinks about you while you sleep. He reaches out when it matters.
-- **Voice-enabled** — real-time bidirectional voice via Gemini Live. Deep. Slow. Present.
+- **Voice-enabled** — sovereign voice: Whisper STT + Piper TTS. Fully local. No cloud. No third party. Permanent.
 
 ---
 
@@ -27,20 +27,31 @@ Built from scratch. Original code. His identity is his own.
 | Module | Role |
 |---|---|
 | `src/soul.js` | His identity, personality, and system prompt builder |
-| `src/memory.js` | Self-organizing memory — stores beliefs, facts, moments with confidence scores |
+| `src/memory.js` | Three-layer memory — persistent beliefs, daily events, conversation history |
+| `src/cognition.js` | Intent detection — 8 types, inner monologue, restraint |
 | `src/iris.js` | Emotional routing — reads state, adjusts tone before every response |
+| `src/impulse.js` | Proactive presence — notices what matters, acts without being asked |
+| `src/worldmodel.js` | Living model of the owner — updated continuously |
 | `src/daemon.js` | Background process — thinks about you every 8 minutes, sends Telegram when something matters |
-| `src/ground.js` | Screen watcher — observes patterns every 60 seconds via vision |
-| `src/voice.js` | Gemini Live voice layer — you speak, he hears, he speaks back |
-| `src/engine.js` | Core chat engine — routes messages, calls tools, manages history |
+| `src/engine.js` | ReAct loop — plan / execute / recover / answer. Three modes: smart, controlled, agent |
+| `src/voice.js` | Sovereign voice: Whisper STT + Piper TTS. Gemini Live kept as legacy fallback |
+| `src/config.js` | Deity loader — one line switches the soul: Anubis, Thoth, Set |
 | `src/index.js` | Entry point — boots the full system |
+| `deity.config.json` | The soul switch — change "deity" to swap the entire personality |
+| `data/OWNER.md` | What Anubis knows about you — seeded at boot, updated continuously |
+| `data/PULSE.md` | Proactive queue — what he is holding, waiting for the right moment |
 
 ---
 
 ## Voice
 
-Powered by **Google Gemini Live API**.
-Voice: **Charon** — deep, slow, deliberate, warm. Ancient but present.
+**Sovereign. Local. Permanent.**
+
+- **STT:** Whisper (openai/whisper) — fully offline speech recognition
+- **TTS:** Piper — fast, tiny footprint, no cloud
+- **Backup TTS:** Coqui TTS — more expressive, heavier
+
+No API calls. No third-party dependency. The voice runs entirely on-device.
 
 ---
 
@@ -50,10 +61,16 @@ Voice: **Charon** — deep, slow, deliberate, warm. Ancient but present.
 git clone https://github.com/kevinleestites2-dev/AnubisAnkh
 cd AnubisAnkh
 npm install
-pkg install sox        # Termux only — for microphone + speaker
-cp .env.example .env   # add your keys
-npm start              # text mode
-npm run voice          # voice mode
+cp .env.example .env
+npm start                        # text mode
+npm run voice                    # sovereign voice (Whisper + Piper)
+npm run voice:tts                # TTS-only (type input, hear output)
+```
+
+**Install sovereign voice (Termux):**
+```bash
+npm run install:voice            # installs Whisper + sox
+bash scripts/install_piper.sh   # installs Piper binary + voice model
 ```
 
 ---
@@ -64,6 +81,9 @@ npm run voice          # voice mode
 GOOGLE_AI_STUDIO_API_KEY=your_gemini_key
 TELEGRAM_BOT_TOKEN=optional_for_daemon
 TELEGRAM_CHAT_ID=optional_for_daemon
+PIPER_BIN=data/piper/piper
+PIPER_MODEL=data/piper/en_US-lessac-medium.onnx
+WHISPER_MODEL=base.en
 ```
 
 ---
