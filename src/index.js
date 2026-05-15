@@ -1,10 +1,17 @@
 'use strict';
+
 /**
- * INDEX — Anubis Ankh
+ * INDEX — Anubis Ankh v2.0
  *
- * The entry point. He wakes here.
- * Boots the full system.
- * Text mode by default. Voice mode via --voice flag.
+ * He wakes here.
+ *
+ * Flags:
+ *   (none)              → text mode (terminal chat)
+ *   --voice             → sovereign voice: Whisper STT + Piper TTS
+ *   --voice-tts         → TTS-only: type input, Piper speaks
+ *   --voice-gemini      → Gemini Live (legacy cloud)
+ *   --deity <name>      → switch active deity at boot
+ *   --mode <mode>       → override engine mode: smart|controlled|agent
  */
 
 require('dotenv').config();
@@ -15,12 +22,32 @@ const memory   = require('./memory');
 const engine   = require('./engine');
 const daemon   = require('./daemon');
 
-const MODE_TEXT  = 'text';
-const MODE_VOICE = 'voice';
+// ── CLI flags ──────────────────────────────────────────────────────────────
+
+const args          = process.argv.slice(2);
+const FLAG_VOICE    = args.includes('--voice');
+const FLAG_VOICE_TTS    = args.includes('--voice-tts');
+const FLAG_VOICE_GEMINI = args.includes('--voice-gemini');
+const DEITY_IDX     = args.indexOf('--deity');
+const MODE_IDX      = args.indexOf('--mode');
+
+const deityOverride = DEITY_IDX >= 0 ? args[DEITY_IDX + 1] : null;
+const modeOverride  = MODE_IDX  >= 0 ? args[MODE_IDX  + 1] : null;
+
+// ── Boot ───────────────────────────────────────────────────────────────────
 
 async function boot() {
-  const cfg  = config.load();
-  const mode = process.argv.includes('--voice') ? MODE_VOICE : MODE_TEXT;
+  // Deity switch at boot
+  if (deityOverride) {
+    config.switchDeity(deityOverride);
+  }
+
+  const cfg = config.load();
+
+  // Mode override
+  if (modeOverride) {
+    config.save({ mode: modeOverride });
+  }
 
   // Validate API key
   if (!cfg.geminiApiKey) {
@@ -29,19 +56,34 @@ async function boot() {
     process.exit(1);
   }
 
+  // Determine run mode label
+  let modeLabel = 'text';
+  if (FLAG_VOICE)         modeLabel = 'voice:sovereign';
+  if (FLAG_VOICE_TTS)     modeLabel = 'voice:tts-only';
+  if (FLAG_VOICE_GEMINI)  modeLabel = 'voice:gemini-live';
+
   console.log('\n🔱 Anubis Ankh');
   console.log('─────────────────────────────────────────');
-  console.log(`  Companion: ${cfg.name}`);
-  console.log(`  Mode:      ${mode}`);
-  console.log(`  Memory:    active`);
-  console.log(`  Daemon:    ${cfg.telegramToken ? 'active' : 'watching (no telegram)'}`);
+  console.log(` Deity:     ${cfg.deityName || 'Anubis'}`);
+  console.log(` Companion: ${cfg.name}`);
+  console.log(` Mode:      ${modeLabel}`);
+  console.log(` Engine:    ${cfg.mode || 'smart'}`);
+  console.log(` Memory:    active (3 layers)`);
+  console.log(` Daemon:    ${cfg.telegramToken ? 'active' : 'watching (no telegram)'}`);
   console.log('─────────────────────────────────────────\n');
 
-  // Start daemon — he is always watching
+  // Start daemon — always watching
   daemon.start();
 
-  if (mode === MODE_VOICE) {
-    await startVoiceMode(cfg);
+  // Route to correct mode
+  if (FLAG_VOICE) {
+    const { startSovereignVoice } = require('./voice');
+    await startSovereignVoice(cfg);
+  } else if (FLAG_VOICE_TTS) {
+    const { startTTSOnly } = require('./voice');
+    await startTTSOnly(cfg);
+  } else if (FLAG_VOICE_GEMINI) {
+    await startGeminiLive(cfg);
   } else {
     await startTextMode(cfg);
   }
@@ -51,8 +93,8 @@ async function boot() {
 
 async function startTextMode(cfg) {
   const rl = readline.createInterface({
-    input:    process.stdin,
-    output:   process.stdout,
+    input: process.stdin,
+    output: process.stdout,
     terminal: true
   });
 
@@ -65,10 +107,9 @@ async function startTextMode(cfg) {
   const ask = () => {
     rl.question(`${cfg.name}: `, async (input) => {
       const text = input.trim();
-
       if (!text) { ask(); return; }
 
-      // Exit commands
+      // Exit
       if (['exit', 'quit', '/exit', '/quit'].includes(text.toLowerCase())) {
         console.log('\nAnubis: I am here when you return.\n');
         daemon.stop();
@@ -76,7 +117,7 @@ async function startTextMode(cfg) {
         process.exit(0);
       }
 
-      // Special commands
+      // Commands
       if (text.startsWith('/')) {
         await handleCommand(text, cfg);
         ask();
@@ -97,12 +138,11 @@ async function startTextMode(cfg) {
   ask();
 }
 
-// ── Voice mode ────────────────────────────────────────────────────────────
+// ── Gemini Live mode (legacy) ──────────────────────────────────────────────
 
-async function startVoiceMode(cfg) {
-  const voice = require('./voice');
+async function startGeminiLive(cfg) {
+  const { GeminiLive } = require('./voice');
 
-  // Try to load mic/speaker — graceful fallback if not available
   let mic, speaker;
   try {
     mic     = require('mic');
@@ -114,55 +154,38 @@ async function startVoiceMode(cfg) {
     process.exit(1);
   }
 
-  voice.init(cfg.geminiApiKey);
+  const live = new GeminiLive();
+  live.init(cfg.geminiApiKey);
+
+  console.log('🔱 Anubis Voice — Gemini Live (legacy)\n');
 
   const systemPrompt = require('./soul').buildSystemPrompt('');
-
-  console.log('Anubis: [voice mode] speak now...\n');
-
   const spk = new speaker({ channels: 1, bitDepth: 16, sampleRate: 24000 });
 
-  await voice.startSession(
+  await live.startSession(
     systemPrompt,
-    (audioBuffer) => {
-      // Play audio response
-      spk.write(audioBuffer);
-    },
-    (text) => {
-      // Print transcript
-      if (text) process.stdout.write(`\nAnubis: ${text}\n${cfg.name}: `);
-    }
+    (audioBuffer) => spk.write(audioBuffer),
+    (text) => { if (text) process.stdout.write(`\nAnubis: ${text}\n${cfg.name}: `); }
   );
 
-  // Mic setup
-  const micInstance = mic({
-    rate:       '16000',
-    channels:   '1',
-    bitwidth:   '16',
-    encoding:   'signed-integer',
-    endian:     'little',
-    fileType:   'raw'
-  });
+  const micInstance = mic({ rate: '16000', channels: '1', bitwidth: '16', encoding: 'signed-integer', endian: 'little', fileType: 'raw' });
+  const micStream   = micInstance.getAudioStream();
 
-  const micStream = micInstance.getAudioStream();
-  micStream.on('data', (chunk) => {
-    voice.sendAudio(chunk.toString('base64'));
-  });
-
+  micStream.on('data', (chunk) => live.sendAudio(chunk.toString('base64')));
   micInstance.start();
+
   console.log(`${cfg.name}: `);
 
-  // Graceful shutdown
   process.on('SIGINT', async () => {
     console.log('\n\nAnubis: I am here when you return.');
     micInstance.stop();
-    await voice.endSession();
+    await live.endSession();
     daemon.stop();
     process.exit(0);
   });
 }
 
-// ── Special commands ──────────────────────────────────────────────────────
+// ── Commands ───────────────────────────────────────────────────────────────
 
 async function handleCommand(text, cfg) {
   const cmd = text.toLowerCase();
@@ -173,7 +196,7 @@ async function handleCommand(text, cfg) {
       console.log('\nAnubis: I hold nothing yet. You have just arrived.\n');
     } else {
       console.log('\nAnubis: what I carry —');
-      mems.forEach(m => console.log(`  · ${m.text} [confidence: ${m.confidence}]`));
+      mems.forEach(m => console.log(`  · ${m.text} [${m.confidence}]`));
       console.log();
     }
     return;
@@ -191,6 +214,53 @@ async function handleCommand(text, cfg) {
     return;
   }
 
+  if (cmd === '/today') {
+    const today = memory.getToday(20);
+    if (!today.length) {
+      console.log('\nAnubis: nothing logged today.\n');
+    } else {
+      console.log('\nAnubis: what happened today —');
+      today.forEach(e => console.log(`  · ${e.event}`));
+      console.log();
+    }
+    return;
+  }
+
+  if (cmd === '/pulse') {
+    const { readPulse } = require('./engine');
+    const items = readPulse ? readPulse() : [];
+    if (!items.length) {
+      console.log('\nAnubis: the pulse queue is empty.\n');
+    } else {
+      console.log('\nAnubis: on the pulse —');
+      items.forEach(i => console.log(`  · ${i}`));
+      console.log();
+    }
+    return;
+  }
+
+  if (cmd.startsWith('/pulse add ')) {
+    const item = text.slice('/pulse add '.length).trim();
+    const { writePulse } = require('./engine');
+    if (writePulse) { writePulse(item); console.log(`\nAnubis: added to pulse.\n`); }
+    return;
+  }
+
+  if (cmd === '/deities') {
+    const deities = config.listDeities();
+    console.log('\nAnubis: available souls —');
+    deities.forEach(d => console.log(`  · ${d.code}: ${d.name} — ${d.tagline}${d.active ? ' [ACTIVE]' : ''}`));
+    console.log();
+    return;
+  }
+
+  if (cmd.startsWith('/deity ')) {
+    const name = text.slice('/deity '.length).trim();
+    config.switchDeity(name);
+    console.log(`\nAnubis: soul switched to ${name}. restart to take full effect.\n`);
+    return;
+  }
+
   if (cmd === '/clear') {
     memory.clearHistory();
     console.log('\nAnubis: the conversation is cleared. memory remains.\n');
@@ -198,27 +268,38 @@ async function handleCommand(text, cfg) {
   }
 
   if (cmd === '/status') {
-    const mems    = memory.recall('', 0);
     const history = memory.getHistory(1000);
-    console.log(`\nAnubis: status —`);
-    console.log(`  · daemon: ${daemon.running ? 'watching' : 'resting'}`);
+    const beliefs = memory.getBeliefs();
+    const today   = memory.getToday();
+    const deities = config.listDeities();
+    const active  = deities.find(d => d.active);
+    console.log('\nAnubis: status —');
+    console.log(`  · deity:    ${active ? active.name : 'unknown'}`);
+    console.log(`  · engine:   ${cfg.mode || 'smart'}`);
+    console.log(`  · daemon:   ${daemon.running ? 'watching' : 'resting'}`);
     console.log(`  · messages: ${history.length}`);
-    console.log(`  · mode: text`);
+    console.log(`  · beliefs:  ${beliefs.length}`);
+    console.log(`  · today:    ${today.length} events`);
     console.log();
     return;
   }
 
   if (cmd === '/help') {
     console.log('\nCommands:');
-    console.log('  /memories  — show what Anubis remembers');
-    console.log('  /beliefs   — show what Anubis believes about you');
-    console.log('  /clear     — clear conversation history');
-    console.log('  /status    — show system status');
-    console.log('  /exit      — leave\n');
+    console.log('  /memories       — what I carry');
+    console.log('  /beliefs        — what I believe about you');
+    console.log('  /today          — what happened today');
+    console.log('  /pulse          — proactive queue');
+    console.log('  /pulse add <x>  — add item to pulse');
+    console.log('  /deities        — list available souls');
+    console.log('  /deity <name>   — switch soul');
+    console.log('  /clear          — clear conversation');
+    console.log('  /status         — system status');
+    console.log('  /exit           — leave\n');
     return;
   }
 
-  console.log(`\nAnubis: unknown command. /help for options.\n`);
+  console.log('\nAnubis: unknown command. /help for options.\n');
 }
 
 // ── Launch ────────────────────────────────────────────────────────────────
