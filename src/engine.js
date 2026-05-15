@@ -1,42 +1,46 @@
 'use strict';
 
 /**
- * ENGINE — Anubis Ankh v2.0
+ * ENGINE — Anubis Ankh v2.1
  *
  * The ReAct core. Plan → Execute → Recover → Answer.
  * Three modes: smart / controlled / agent.
  * Human-in-the-loop pause/resume.
  * Skills → Actions → Tools → Functions chain.
  *
- * Order of operations (every message):
- *  1. MODE — detect execution mode
- *  2. COGNITION — what is actually being asked? what is the right move?
- *  3. IRIS — what is the emotional state?
- *  4. IMPULSE — is there a trigger that demands special presence?
- *  5. SOUL — build the full system prompt
- *  6. WORLD MODEL — inject deep understanding of this person
- *  7. REACT LOOP — plan, execute tools, recover from failures, answer
- *  8. MEMORY — store what matters
- *  9. WORLD MODEL UPDATE — evolve understanding
+ * v2.1 changes:
+ *   - executor.js + skill_matcher.js wired in
+ *   - executeTool() now routes through executor for real skill execution
+ *   - SKILLS registry updated to reflect live skills (shell, http, file, telegram, web_search)
+ *   - Skill list injected into system prompt so Anubis knows what he can do
  */
 
-const https    = require('https');
-const fs       = require('fs');
-const path     = require('path');
-const memory   = require('./memory');
-const config   = require('./config');
-const soul     = require('./soul');
-const iris     = require('./iris');
-const cognition = require('./cognition');
-const impulse  = require('./impulse');
+const https      = require('https');
+const fs         = require('fs');
+const path       = require('path');
+const memory     = require('./memory');
+const config     = require('./config');
+const soul       = require('./soul');
+const iris       = require('./iris');
+const cognition  = require('./cognition');
+const impulse    = require('./impulse');
 const worldModel = require('./worldmodel');
+const executor   = require('./executor');
+const matcher    = require('./skill_matcher');
 
-// ── Execution modes ───────────────────────────────────────────────────────
+// Pre-load all skills so they self-register with skill_matcher
+require('./skills/shell');
+require('./skills/http');
+require('./skills/file');
+require('./skills/telegram');
+require('./skills/web_search');
+
+// ── Execution modes ────────────────────────────────────────────────────────
 
 const MODES = {
-  SMART:      'smart',      // Anubis chooses the best mode for each task
-  CONTROLLED: 'controlled', // Predictable, skills-only, no dynamic planning
-  AGENT:      'agent',      // Full ReAct loop — plans, executes tools, recovers
+  SMART:      'smart',
+  CONTROLLED: 'controlled',
+  AGENT:      'agent',
 };
 
 const MODE_SIGNALS = {
@@ -45,6 +49,9 @@ const MODE_SIGNALS = {
     /\b(search|find|look up|check|fetch|get me|pull)\b/i,
     /\b(step by step|walk me through|do this for me)\b/i,
     /\b(autonomously|automatically|on your own)\b/i,
+    /\b(call the api|hit the endpoint|run the command|check the balance)\b/i,
+    /\b(send.*telegram|alert me|notify me)\b/i,
+    /\b(read.*file|write.*file|check.*log|war chest)\b/i,
   ],
   [MODES.CONTROLLED]: [
     /\b(remind me|set a timer|schedule|alarm|note)\b/i,
@@ -54,23 +61,17 @@ const MODE_SIGNALS = {
 };
 
 function detectMode(message, cfg) {
-  // Explicit override in config
   if (cfg.mode && cfg.mode !== MODES.SMART) return cfg.mode;
-
-  // Signal-based detection
   for (const [mode, patterns] of Object.entries(MODE_SIGNALS)) {
     for (const p of patterns) {
       if (p.test(message)) return mode;
     }
   }
-
   return MODES.SMART;
 }
 
-// ── Skills registry ───────────────────────────────────────────────────────
-// Skills → Actions → Tools → Functions
-// Add new skills here. Each skill exposes actions.
-// Actions call tools. Tools call functions.
+// ── Skills registry ────────────────────────────────────────────────────────
+// Legacy inline skills + executor-backed live skills
 
 const SKILLS = {
   system: {
@@ -110,86 +111,117 @@ const SKILLS = {
       },
     }
   },
-  // Future skills plug in here:
-  // weather: { ... }
-  // files: { ... }
-  // phone: { ... }   ← NexusClaw bridge
-  // web: { ... }     ← search + fetch
+  // Live skills — backed by executor.js → skills/*.js
+  shell:      { description: 'Run terminal commands on the device' },
+  http:       { description: 'Make HTTP requests to any API' },
+  file:       { description: 'Read, write, and manage files on the device' },
+  telegram:   { description: 'Send alerts and messages via Telegram' },
+  web_search: { description: 'Search the web for live information' },
 };
 
 // ── Tool execution ─────────────────────────────────────────────────────────
+// Routes through executor.js for live skills,
+// falls back to inline SKILLS for system/memory.
 
-function executeTool(skillName, actionName, args = {}) {
-  const skill = SKILLS[skillName];
-  if (!skill) return { error: `unknown skill: ${skillName}` };
-
-  const action = skill.actions[actionName];
-  if (!action) return { error: `unknown action: ${actionName} in skill: ${skillName}` };
-
-  try {
-    return action.fn(args);
-  } catch (err) {
-    return { error: `tool execution failed: ${err.message}` };
+async function executeTool(skillName, actionName, args = {}) {
+  // Inline skills first
+  const inlineSkill = SKILLS[skillName];
+  if (inlineSkill && inlineSkill.actions && inlineSkill.actions[actionName]) {
+    try {
+      return inlineSkill.actions[actionName].fn(args);
+    } catch (err) {
+      return { error: `${skillName}.${actionName} failed: ${err.message}` };
+    }
   }
+
+  // Live executor skills
+  const { result, error } = await executor.execute(skillName, actionName, args);
+  if (error) return { error };
+  return { result };
 }
 
-// ── ReAct loop ────────────────────────────────────────────────────────────
-// Plan → Execute → Observe → Recover → Answer
-// Max 5 iterations before forcing a direct answer.
+// ── Build skills block for system prompt ───────────────────────────────────
+// Anubis needs to KNOW what he can do to use it.
 
-const MAX_REACT_STEPS = 5;
+function buildSkillsBlock() {
+  const liveSkills = executor.list();
+  const inlineSkills = [
+    { name: 'system', description: 'System info', actions: ['getTime', 'getUptime'] },
+    { name: 'memory', description: 'Recall and store memories', actions: ['recall', 'store'] },
+  ];
+  const all = [...inlineSkills, ...liveSkills];
+
+  return `## AVAILABLE SKILLS
+You have real capabilities. Use them. Format: ACT: skillName.actionName {"key":"value"}
+
+${all.map(s =>
+  `- **${s.name}**: ${s.description}\n  actions: ${(s.actions || []).join(', ')}`
+).join('\n')}
+
+Real usage examples:
+- ACT: shell.run {"command":"ls ~/"}
+- ACT: web_search.search {"query":"Lee County tax deed auction results"}
+- ACT: http.stripe_balance {}
+- ACT: http.nexus_relay_ping {}
+- ACT: file.war_chest {}
+- ACT: telegram.alert {"subject":"ZeusPrime signal","body":"BUY TRUMP 60%"}
+- ACT: file.read {"path":"PULSE.md"}
+- ACT: http.github_ci {"repo":"kevinleestites2-dev/AnubisAnkh"}`;
+}
+
+// ── ReAct loop ─────────────────────────────────────────────────────────────
+
+const MAX_REACT_STEPS = 6;
 
 async function reactLoop(userMessage, fullSystem, history, cfg) {
-  const steps = [];
-  let finalAnswer = null;
-  let needsInput = null; // human-in-the-loop pause
+  const steps       = [];
+  let finalAnswer   = null;
+  let needsInput    = null;
 
   for (let i = 0; i < MAX_REACT_STEPS; i++) {
-    // Build context from previous steps
     const stepContext = steps.length
       ? '\n\n## REACT STEPS COMPLETED\n' + steps.map((s, idx) =>
           `Step ${idx + 1}: ${s.type}\n${JSON.stringify(s.result, null, 2)}`
         ).join('\n\n')
       : '';
 
-    // Ask Anubis to plan or answer
     const planPrompt = `${fullSystem}${stepContext}
 
 ## REACT INSTRUCTION
 You are in AGENT mode. For each step, respond with EXACTLY ONE of:
 
 THINK: [your reasoning about what to do next]
-ACT: [skillName].[actionName] [json args or empty]
-ASK: [one clarifying question if you need input from the user]
-ANSWER: [your final response to the user]
+ACT: [skillName].[actionName] [json args or empty {}]
+ASK: [one clarifying question if you genuinely cannot proceed]
+ANSWER: [your final response to the user — this ends the loop]
 
 Current task: ${userMessage}
-${steps.length ? `You have completed ${steps.length} step(s). Continue or give ANSWER.` : 'Begin.'}`;
+${steps.length ? `Completed ${steps.length} step(s). Continue or give ANSWER.` : 'Begin.'}`;
 
     const planResponse = await callGemini(cfg.geminiApiKey, cfg.model, planPrompt, history);
     if (!planResponse) break;
 
     const line = planResponse.trim().split('\n')[0].trim();
 
-    // Parse the response
     if (line.startsWith('THINK:')) {
       steps.push({ type: 'THINK', result: { thought: line.replace('THINK:', '').trim() }});
       continue;
     }
 
     if (line.startsWith('ACT:')) {
-      const actStr = line.replace('ACT:', '').trim();
-      const [toolRef, ...argParts] = actStr.split(' ');
+      const actStr          = line.replace('ACT:', '').trim();
+      const spaceIdx        = actStr.indexOf(' ');
+      const toolRef         = spaceIdx >= 0 ? actStr.slice(0, spaceIdx) : actStr;
+      const argStr          = spaceIdx >= 0 ? actStr.slice(spaceIdx + 1) : '{}';
       const [skillName, actionName] = toolRef.split('.');
       let args = {};
-      try { args = JSON.parse(argParts.join(' ') || '{}'); } catch {}
+      try { args = JSON.parse(argStr); } catch {}
 
-      const toolResult = executeTool(skillName, actionName, args);
+      const toolResult = await executeTool(skillName, actionName, args);
 
       if (toolResult.error) {
-        // Recovery — log failure, try again
         steps.push({ type: 'ACT_FAILED', tool: toolRef, result: toolResult });
-        steps.push({ type: 'RECOVER', result: { note: `${toolRef} failed. replanning.` }});
+        steps.push({ type: 'RECOVER',    result: { note: `${toolRef} failed. Replanning.` }});
       } else {
         steps.push({ type: 'ACT', tool: toolRef, result: toolResult });
       }
@@ -197,7 +229,6 @@ ${steps.length ? `You have completed ${steps.length} step(s). Continue or give A
     }
 
     if (line.startsWith('ASK:')) {
-      // Human-in-the-loop — pause and surface the question
       needsInput = line.replace('ASK:', '').trim();
       break;
     }
@@ -207,7 +238,7 @@ ${steps.length ? `You have completed ${steps.length} step(s). Continue or give A
       break;
     }
 
-    // Fallback — treat entire response as the answer
+    // Fallback — treat entire response as answer
     finalAnswer = planResponse;
     break;
   }
@@ -223,17 +254,17 @@ function callGemini(apiKey, model, systemInstruction, contents) {
       system_instruction: { parts: [{ text: systemInstruction }] },
       contents,
       generationConfig: {
-        temperature: 0.9,
+        temperature:     0.9,
         maxOutputTokens: 800,
       }
     });
 
     const req = https.request({
       hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      method: 'POST',
+      path:     `/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      method:   'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type':   'application/json',
         'Content-Length': Buffer.byteLength(body)
       }
     }, (res) => {
@@ -242,7 +273,7 @@ function callGemini(apiKey, model, systemInstruction, contents) {
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
-          const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+          const text   = parsed?.candidates?.[0]?.content?.parts?.[0]?.text || null;
           resolve(text);
         } catch { resolve(null); }
       });
@@ -254,7 +285,7 @@ function callGemini(apiKey, model, systemInstruction, contents) {
   });
 }
 
-// ── PULSE.md — proactive pulse queue ─────────────────────────────────────
+// ── PULSE.md ──────────────────────────────────────────────────────────────
 
 const PULSE_PATH = path.join(__dirname, '..', 'data', 'PULSE.md');
 
@@ -283,7 +314,7 @@ function writePulse(item) {
   } catch {}
 }
 
-// ── OWNER.md — curated owner profile ─────────────────────────────────────
+// ── OWNER.md ──────────────────────────────────────────────────────────────
 
 const OWNER_PATH = path.join(__dirname, '..', 'data', 'OWNER.md');
 
@@ -302,7 +333,7 @@ function updateOwner(key, value) {
       ? fs.readFileSync(OWNER_PATH, 'utf8')
       : '# OWNER PROFILE\n\n';
     const regex = new RegExp(`^- \\*\\*${key}\\*\\*:.*$`, 'm');
-    const line = `- **${key}**: ${value}`;
+    const line  = `- **${key}**: ${value}`;
     if (regex.test(content)) {
       content = content.replace(regex, line);
     } else {
@@ -336,7 +367,6 @@ function extractMemory(userMessage, response, name) {
 }
 
 // ── Layered memory builder ────────────────────────────────────────────────
-// persistent (beliefs) + daily (today's events) + discussion (recent turns)
 
 function buildLayeredMemoryBlock(userMessage) {
   const beliefs = memory.getBeliefs().slice(0, 6)
@@ -361,16 +391,15 @@ ${owner ? `### Owner Profile\n${owner}` : ''}`.trim();
 
 class Engine {
   constructor() {
-    this._pendingAsk = null; // stores paused ReAct state for human-in-the-loop
+    this._pendingAsk = null;
   }
 
   async chat(userMessage) {
     const cfg = config.load();
 
-    // Save user message
     memory.addMessage('user', userMessage);
 
-    // ── Step 1: MODE detection ───────────────────────────────────────────
+    // ── Step 1: MODE ─────────────────────────────────────────────────────
     const mode = detectMode(userMessage, cfg);
 
     // ── Step 2: COGNITION ────────────────────────────────────────────────
@@ -389,20 +418,21 @@ class Engine {
 
     // ── Step 6: WORLD MODEL ──────────────────────────────────────────────
     const worldSummary = worldModel.getSummary();
-    const worldBlock   = worldSummary
-      ? `\n## ANUBIS WORLD MODEL\n${worldSummary}`
-      : '';
+    const worldBlock   = worldSummary ? `\n## ANUBIS WORLD MODEL\n${worldSummary}` : '';
 
     // ── Step 6b: LAYERED MEMORY ──────────────────────────────────────────
     const memoryBlock = buildLayeredMemoryBlock(userMessage);
 
-    // ── Step 6c: PULSE (proactive items) ─────────────────────────────────
+    // ── Step 6c: PULSE ───────────────────────────────────────────────────
     const pulseItems = readPulse();
     const pulseBlock = pulseItems.length
-      ? `\n## PROACTIVE PULSE\nThese are things worth raising when the moment is right:\n${pulseItems.join('\n')}`
+      ? `\n## PROACTIVE PULSE\nRaise these when the moment is right:\n${pulseItems.join('\n')}`
       : '';
 
-    // ── Assemble full system prompt ──────────────────────────────────────
+    // ── Step 6d: SKILLS BLOCK ────────────────────────────────────────────
+    const skillsBlock = buildSkillsBlock();
+
+    // ── Assemble full system prompt ───────────────────────────────────────
     const modeBlock = `\n## EXECUTION MODE: ${mode.toUpperCase()}\n` + {
       [MODES.SMART]:      'Choose the best approach. You decide.',
       [MODES.CONTROLLED]: 'Use only defined skills and actions. No improvisation.',
@@ -413,6 +443,7 @@ class Engine {
       baseSystem,
       worldBlock,
       memoryBlock,
+      skillsBlock,
       cognitionBlock,
       irisInjection,
       impulseInjection,
@@ -420,24 +451,22 @@ class Engine {
       pulseBlock,
     ].filter(Boolean).join('\n\n');
 
-    // ── Step 7: Build conversation history ──────────────────────────────
-    const history = memory.getHistory(20);
+    // ── Step 7: Conversation history ─────────────────────────────────────
+    const history  = memory.getHistory(20);
     const contents = history.map(h => ({
-      role: h.role === 'assistant' ? 'model' : 'user',
+      role:  h.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: h.content }]
     }));
 
-    // ── Step 8: EXECUTE based on mode ───────────────────────────────────
+    // ── Step 8: EXECUTE ──────────────────────────────────────────────────
     let reply;
 
     if (mode === MODES.AGENT) {
-      // Full ReAct loop
       const { finalAnswer, needsInput, steps } = await reactLoop(
         userMessage, fullSystem, contents, cfg
       );
 
       if (needsInput) {
-        // Human-in-the-loop — pause, surface the question
         this._pendingAsk = { userMessage, steps };
         reply = needsInput;
       } else {
@@ -450,21 +479,19 @@ class Engine {
       }
 
     } else {
-      // Smart or Controlled — single Gemini call
       const response = await callGemini(cfg.geminiApiKey, cfg.model, fullSystem, contents);
       reply = response || '...';
     }
 
-    // ── Step 9: Save response ─────────────────────────────────────────────
+    // ── Step 9: Save ──────────────────────────────────────────────────────
     memory.addMessage('assistant', reply);
 
     // ── Step 10: Extract memories ─────────────────────────────────────────
     extractMemory(userMessage, reply, cfg.name);
 
-    // ── Step 11: Update world model ───────────────────────────────────────
+    // ── Step 11: Update world model ────────────────────────────────────────
     worldModel.update(userMessage, reply);
 
-    // ── Debug log ─────────────────────────────────────────────────────────
     if (process.env.ANUBIS_DEBUG === 'true') {
       console.log('\n[MODE]', mode);
       console.log('[COGNITION]', cognitionBlock.slice(0, 200));
@@ -476,12 +503,10 @@ class Engine {
   }
 }
 
-// ── Exports ───────────────────────────────────────────────────────────────
+// ── Exports ────────────────────────────────────────────────────────────────
 
 module.exports = new Engine();
-
-// Expose internals for daemon + pulse system
-module.exports.writePulse   = writePulse;
+module.exports.writePulse  = writePulse;
 module.exports.declinePulse = declinePulse;
 module.exports.updateOwner  = updateOwner;
 module.exports.SKILLS       = SKILLS;
