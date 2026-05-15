@@ -1,18 +1,26 @@
 {
   "name": "anubis-ankh",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "The Guide. The Protector. The one who walks beside you through the dark.",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "voice": "node src/voice.js",
-    "daemon": "node src/daemon.js"
+    "start":         "node src/index.js",
+    "voice":         "node src/index.js --voice",
+    "voice:tts":     "node src/index.js --voice-tts",
+    "voice:gemini":  "node src/index.js --voice-gemini",
+    "daemon":        "node src/daemon.js",
+    "install:voice": "pkg install python ffmpeg sox && pip install openai-whisper",
+    "install:piper": "bash scripts/install_piper.sh"
   },
   "dependencies": {
-    "@google/genai": "^0.7.0",
+    "@google/genai":  "^0.7.0",
     "better-sqlite3": "^9.4.3",
-    "dotenv": "^16.0.0",
-    "node-fetch": "^3.3.2"
+    "dotenv":         "^16.0.0",
+    "node-fetch":     "^3.3.2"
+  },
+  "optionalDependencies": {
+    "mic":     "^2.1.2",
+    "speaker": "^0.5.4"
   },
   "engines": {
     "node": ">=18.0.0"
