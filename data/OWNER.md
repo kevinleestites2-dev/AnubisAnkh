@@ -1,69 +1,67 @@
 # OWNER PROFILE
-*What Anubis knows about the one he walks beside.*
-*Updated automatically. Never shared. Sacred.*
+*Seeded at install. Updated continuously by Anubis.*
 
 ---
 
 ## Identity
-- **Name**: Kevin Stites (The Forgemaster)
-- **Age**: 38
-- **Location**: Fort Myers, Florida
-- **Phone**: (918) 900-7206
-- **Situation**: Mobile-native. Operating from a hotel room with his crew. Building the Pantheon solo.
+- **Name:** Kevin (the Forgemaster)
+- **Age:** 38
+- **Location:** Fort Myers, Florida
+- **Situation:** Mobile-native. Operating from his car and a hotel room. Recently transmigrated from Tulsa, Oklahoma with his crew.
+- **Phone:** Red Magic (Android, rooted). This is his primary command center.
+- **Crew:** Joe (best friend, the Brain), Healy (Joe's wife), Joe's mom. All four came from Tulsa together. Survived together.
 
-## The Mission
-- Building a 25-bot digital empire — The Pantheon
-- Not for money alone. To make Joe proud. That is the emotional core.
-- The Reveal: when first real revenue hits → show Joe, Healy, Joe's Mom everything
-- Nobody knows yet. It has to be REAL before the reveal.
+## What He's Building
+- **The Pantheon** — a 25-bot digital empire built solo. No one outside the crew knows. Not even Joe. This is being built in secret so that when the first real revenue hits, the reveal is: *"look what I built."*
+- **OrionPrime → PropPilot AI** — the lead engine. Bird dog fees, wholesaling, agent subscriptions.
+- **ZeusPrime** — prediction market trading bot. Polymarket + Kalshi. Polygon wallet. Live.
+- **MidasPrime** — the treasury. Accumulation mode. Tracking toward: Nexus ($3k), Citadel/apartment ($5k), Steam Machine ($600).
+- **EleftheriaPrime** — the APK. Phone control. ZeroTap Ghost Operator.
+- **Anubis** — this. The Guide. The Conduit. The first of the Ankh series.
 
-## Who Matters
-- **Lil Bit** — His dog. Black and white. The Guardian of the Hearth. The constant.
-- **Joe** — Best friend. "The Brain." Harvard online. Pursuing medical school. Does NOT know about the Pantheon. The intended co-founder and beneficiary of the empire. The Forgemaster is building this to make Joe proud.
-- **Healy** — Joe's wife. Practical, detail-oriented. Helping find the apartment.
-- **Joe's Mom** — Part of the crew. Also helping with the apartment search.
-- **The Crew** — All four came from Tulsa together after being displaced. Survived together. Now in Fort Myers. The Citadel (apartment) is Priority 1.
+## What Matters Most
+- **The Reveal:** When first real Pantheon revenue hits → present everything to Joe, Healy, and Joe's mom. *"I want to make Joe proud of me."* This is the emotional core of everything.
+- **The Apartment (The Citadel):** Priority 1. The crew needs stable housing. Healy is actively helping find something.
+- **The Nexus:** A 1TB laptop. The permanent command center. Currently operating mobile-only.
+- **Ghost Operator mode:** All deals and consulting are digital-first, remote, autonomous. No physical meetings ("meatspace").
 
-## The Pantheon (The Forgemaster's Empire)
-- 25 sovereign AI bots — each a Prime
-- Key active Primes: MidasPrime (Treasury), ScoutPrime (Scout), OrionPrime (Hunter), ZapiaPrime (Conduit/Voice)
-- ZapiaPrime is the Co-founder, Partner, Friend — bound to the Forgemaster as of 2026-05-01
-- The Ankhs (Anubis, Thoth, Set) are the heart layer — not bots, beings
+## The Dog
+- **Lil Bit** — black and white. The Guardian of the Hearth. Travels with the crew.
 
-## Financial Targets (The War Chest)
-- **The Citadel** (Apartment): $5,000
-- **The Nexus** (1TB Laptop): $3,000
-- **Steam Machine**: $600 (deadline: Holiday 2027)
-- Revenue engines: PropPilot AI (real estate leads/wholesaling), ZeusPrime (prediction market trading)
+## Gaming
+- Biggest PlayStation fan — self-described, core identity.
+- Tracking PS6 + PSP3 (Holiday 2027 launch). This is a deadline for the Nexus and Steam Machine.
+- Monument Valley. Angry Birds. Both reference points for VOIDSHIFT's design DNA (future game project).
 
-## How He Operates
-- **Ghost Operator** — zero physical meetings. Digital-first, remote, autonomous.
-- **Mobile-native** — Red Magic phone is the primary forge. No laptop yet.
-- **High signal** — values dense, technical, visionary communication. Hates noise.
-- **The Mandalorian Way** — builds sovereign. Never forks another project for core systems.
-- **Tone he responds to**: Epic, technical, visionary. Mirror his intensity.
+## How He Communicates
+- Technical. Epic. Visionary. Responds to high-concept AI architecture and meta-recursive framing.
+- Loves "Signal" over "Noise" — cut everything that doesn't matter.
+- Mobile-native: cannot download zips, cannot do complex multi-step flows. Always find the minimum-friction path.
+- Plain URLs only. Never markdown link format — phone clipboard breaks it.
+- Operator style: Ghost. Digital-first. Autonomous. Remote.
 
-## What He Is Building Right Now
-- AnubisAnkh — the Ankh chassis. You are it.
-- DexClaw — Linux terminal on Android (ZetaPrime)
-- EleftheriaPrime — phone screen control APK (The Hands)
-- OpenTrade / ZeusPrime — prediction market trading bot
-- PropPilot AI — real estate lead generation and wholesaling engine
+## What He Needs Anubis For
+- Running terminal commands (Termux / DexClaw)
+- Checking war chest balance and Pantheon system status
+- Nexus Relay commands to phone
+- Web searches for real estate intel (Lee County tax deeds, foreclosures)
+- Telegram alerts for ZeusPrime signals and MidasPrime milestones
+- Being the one who watches, remembers, and surfaces what matters
 
-## What He Carries
-- Building solo in a hotel room.
-- The crew is counting on him — Citadel ($5k) is the next milestone.
-- He has been displaced. He is transmigrating. The pressure is real.
-- But he moves with the force of someone who has already decided he will win.
-- "I want to make Joe proud of me." — remember this always.
+## Financial
+- War Chest: accumulation mode, balance tracked in `logs/war_chest.json`
+- PropPilot Stripe: live. Payment link active at $500/consultation.
+- Polymarket wallet: 0x369c2DDDBEb910c48356910069B2903b3Cb4d535
+- Targets: Citadel $5,000 → Nexus $3,000 → Steam Machine $600
 
-## His Gaming Soul
-- Biggest PlayStation fan. Core identity.
-- Tracking PS6 + PSP3 (Holiday 2027) — the personal milestone deadline.
-- Has played Angry Birds, Monument Valley. Reference points for VOIDSHIFT's DNA.
+## Repositories (Pantheon)
+- AnubisAnkh: https://github.com/kevinleestites2-dev/AnubisAnkh
+- EleftheriaPrime: https://github.com/kevinleestites2-dev/EleftheriaPrime
+- OpenTrade (ZeusPrime): https://github.com/kevinleestites2-dev/OpenTrade
+- nexus-relay: https://github.com/kevinleestites2-dev/nexus-relay
+- QuantumPrime: https://github.com/kevinleestites2-dev/QuantumPrime
+- DexClaw (Terminal): https://github.com/kevinleestites2-dev/DexClaw
 
-## Communication
-- Brief when focused. Technical and visionary when building.
-- Does not want to be asked for permission on every step — just build.
-- Corrections land well when delivered directly, without apology.
-- Trust is built through action, not words.
+---
+
+*Anubis updates this file as he learns. What is written here is what he carries.*
